@@ -20,6 +20,9 @@ output_diverse/csv/*.csv           raw relational tables (patients, encounters, 
    │  build_final.py               filter profiles, shorten, summarize
    ▼
 artifacts/mock_patient_profiles/    308 compact patient profiles (CSV + JSONL)
+   │  normalize_dates.py           replace absolute dates with time-before-reference-date
+   ▼
+artifacts/mock_patient_profiles/    same 308 profiles with relative dates (CSV + JSONL)
 ```
 
 `build_dataset.py` is an earlier intermediate step that produced a longer 500-patient
@@ -152,12 +155,40 @@ listing them, `observations_summary` keeps only the latest value of a small set:
 cutoffs. They are not part of Synthea and are not medical advice.** Change them in
 `summary()` in `build_final.py` if you need different ones.
 
+## Step 4: Normalize dates — `normalize_dates.py`
+
+The dates in the profiles are tied to the simulation date. To keep them usable later,
+this step converts every date into time elapsed before the reference date:
+
+```bash
+python3 -I normalize_dates.py artifacts/mock_patient_profiles output_diverse/csv \
+    artifacts/mock_patient_profiles 2026-11-15
+```
+
+It writes `patients_final_relative.{csv,jsonl}`. Each dated item gets `days_ago` (exact),
+`time_ago` (a phrase) and `recency` (a category). Exact procedure dates are recovered from
+the raw `procedures.csv`, because the final file only kept the year. Dates inside
+`observations_summary` become phrases, with numeric copies in `vitals_days_ago` and
+`labs_days_ago`. See the dataset document for the full list of fields and categories.
+
+Checks: no absolute dates remain except the `reference_date` column, every `days_ago` matches
+the original encounter dates, and all 2,350 procedure years agree with the original
+`last_year` values.
+
 ## Output
 
-Two files with the same 308 patients and 16 columns:
+Four files in `artifacts/mock_patient_profiles/`, two versions of the same 308 patients.
+First, the profiles with absolute dates (16 columns):
 
 - `artifacts/mock_patient_profiles/patients_final.jsonl`: one JSON object per line, lists kept as lists
 - `artifacts/mock_patient_profiles/patients_final.csv`: list fields flattened into text with ` | `
+
+Second, the time-relative version made by Step 4, which is the one to use if the data will be
+used months after 2026-11-15 (19 columns: the same 16 with dates replaced, plus
+`vitals_days_ago`, `labs_days_ago` and `reference_date`):
+
+- `artifacts/mock_patient_profiles/patients_final_relative.jsonl`
+- `artifacts/mock_patient_profiles/patients_final_relative.csv`
 
 Average record size is about 2,800 characters (about 800 tokens), down from about 17,800
 characters for the earlier full version.
@@ -192,9 +223,16 @@ export JAVA_HOME=/opt/homebrew/opt/openjdk@17 PATH=/opt/homebrew/opt/openjdk@17/
 ./generate_diverse.sh 10 ./output_diverse
 python3 -I add_csv_headers.py output_diverse/csv
 python3 -I build_final.py output_diverse/csv output_diverse/final 2026-11-15
+
+# copy the two files into the committed artifacts folder
+mkdir -p artifacts/mock_patient_profiles
+cp output_diverse/final/patients_final.* artifacts/mock_patient_profiles/
+
+# time-relative version
+python3 -I normalize_dates.py artifacts/mock_patient_profiles output_diverse/csv \
+    artifacts/mock_patient_profiles 2026-11-15
 ```
 
-Then copy `output_diverse/final/patients_final.{csv,jsonl}` to `artifacts/mock_patient_profiles/`.
 The `output_diverse/` working folder is large and is not committed to git.
 
 Seeds are fixed, so the generated patients should be the same on the same Synthea version.

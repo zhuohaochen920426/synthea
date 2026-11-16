@@ -106,6 +106,33 @@ Which vitals and labs are present depends on the patient. Missing ones are left 
 - **Empty lists are normal.** Many patients have no allergies, no ongoing care plan, or no
   ongoing medication (54 patients).
 
+## Time-relative version (`patients_final_relative.*`)
+
+The profiles were simulated as of **2026-11-15**, so absolute dates become stale as real time
+passes. `patients_final_relative.csv` and `.jsonl` (same 308 patients) replace every date with
+**how long before the reference date** the event happened. Treat "today" as the day you use
+the data and the history stays consistent.
+
+Each dated item (`encounters`, `procedures_detail`) carries three fields:
+
+| Field | Example | Use |
+|---|---|---|
+| `days_ago` | `201` | exact whole days; add it to any new "today" to rebuild a date |
+| `time_ago` | `6 months ago` | natural phrase for prompts (`today`, `yesterday`, `N days ago`, `N weeks ago`, `N months ago`, `N years ago`) |
+| `recency` | `6-12_months` | category for filtering: `within_last_week`, `within_last_month`, `1-6_months`, `6-12_months`, `1-3_years`, `3-10_years`, `over_10_years` |
+
+Other changes compared with `patients_final.*`:
+- `observations_summary` says `Vitals (6 months ago)` and `Labs (2 years ago)` instead of dates.
+- New columns `vitals_days_ago` and `labs_days_ago` hold the same ages as numbers.
+- New column `reference_date` (`2026-11-15`) records the simulated "today".
+- `procedures_detail` no longer has `last_year`, and has the three fields above. The exact
+  date was recovered from the raw procedures table, not guessed.
+- CSV text uses the phrase, for example `Colonoscopy [2x, last 2 years ago]`.
+
+Not changed: **`age` is still the age on 2026-11-15.** It does not move with real time, so
+treat it as the patient's age when you use the profile. `ongoing` and `resolved` statuses
+were also decided on 2026-11-15 and are not re-evaluated.
+
 ## How it was made
 
 See [`MOCK_PATIENT_PROFILES_PIPELINE.md`](MOCK_PATIENT_PROFILES_PIPELINE.md) for the full process:
