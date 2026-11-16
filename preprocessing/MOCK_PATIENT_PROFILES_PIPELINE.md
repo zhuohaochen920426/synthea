@@ -1,6 +1,6 @@
 # How the final dataset was produced
 
-This document describes, step by step, how the 308-patient dataset in
+This document describes, step by step, how the 516-patient dataset in
 `artifacts/mock_patient_profiles/` was built from the Synthea simulator. For a description of the
 dataset itself (columns, formats, caveats), see
 [`MOCK_PATIENT_PROFILES_DATASET.md`](MOCK_PATIENT_PROFILES_DATASET.md).
@@ -12,17 +12,18 @@ All patients are **synthetic**. No real patient data was used.
 ```
 Synthea (rule-based simulator, no LLM)
    │  generate_diverse.sh          48 runs × 10 living patients, 12 states × 4 age bands
+   │  generate_extra.sh            extra batch: young adults 18-29 and pregnant women
    ▼
-output_diverse/{fhir,csv}          574 patients (480 living + 94 died in simulation)
+output_diverse/{fhir,csv}          735 patients (636 living + 99 died in simulation)
    │  add_csv_headers.py           restore header rows lost by CSV append mode
    ▼
 output_diverse/csv/*.csv           raw relational tables (patients, encounters, ...)
    │  build_final.py               filter profiles, shorten, summarize
    ▼
-artifacts/mock_patient_profiles/    308 compact patient profiles (CSV + JSONL)
+artifacts/mock_patient_profiles/    516 compact patient profiles (CSV + JSONL)
    │  normalize_dates.py           replace absolute dates with time-before-reference-date
    ▼
-artifacts/mock_patient_profiles/    same 308 profiles with relative dates (CSV + JSONL)
+artifacts/mock_patient_profiles/    same 516 profiles with relative dates (CSV + JSONL)
 ```
 
 `build_dataset.py` is an earlier intermediate step that produced a longer 500-patient
@@ -58,9 +59,34 @@ That is 12 states × 4 age bands = **48 runs**, each with `-p 10` (10 *living* p
 Each run exports FHIR (one JSON bundle per patient) and CSV (shared tables, append mode).
 Runs take about 50 seconds each, so the batch takes roughly 40 minutes.
 
-Result: **574 patients**. 480 are the requested living patients, and 94 more died during
-the simulation. Synthea exports patients who died before the reference date in addition to
-the requested living ones.
+Result of the first batch: **574 patients**. 480 are the requested living patients, and 94
+more died during the simulation. Synthea exports patients who died before the reference date
+in addition to the requested living ones.
+
+## Step 1b: Extra batch — `generate_extra.sh`
+
+The first batch left few patients aged 18 to 29 (and very few pregnant ones). Reasons: the
+18-39 band was spread over two decades, and the first filter dropped adults under 28 (see the
+marital note in step 3). An extra batch was appended to the same output folder:
+
+```bash
+./generate_extra.sh ./output_diverse
+```
+
+| Part | Settings | Count |
+|---|---|---|
+| Young adults | `-a 18-29`, any gender, 10 per state, seeds 2001 onward | 120 |
+| Pregnant women | `-g F -a 18-45`, 3 per state, kept by `preprocessing/keep_pregnant.json` | 36 |
+
+`keep_pregnant.json` is a Synthea *keep module*: a patient is kept only if she has an active
+"Normal pregnancy" (SNOMED 72892002) at the end of the simulation, so she is pregnant on the
+reference date. Synthea retries until the requested number of patients match.
+
+CSV append mode writes no header rows, so run `add_csv_headers.py` (step 2) after this
+batch. In this project the headers had already been added, and the extra rows were appended
+to the headered files, which gives the same result. The CSV tables were backed up first.
+
+Result: **735 patients** in total (636 living + 99 died in simulation).
 
 ## Step 2: Restore CSV headers — `add_csv_headers.py`
 
@@ -89,13 +115,19 @@ A patient is kept only if all of these hold:
 
 | Rule | Removed | Why |
 |---|---|---|
-| Age at 2026-11-15 is 18 or older | 74 under 10 (excluded earlier) and 47 aged 10 to 17 | Adult profiles only |
-| No death date | 94 who died in the simulation | The experiment treats everyone as alive. Their records can contain end-of-life care (hospice, dialysis) that would be inconsistent. |
-| Marital status is present | 110 with it blank (mostly children) | Incomplete demographic profile |
+| Age at 2026-11-15 is 18 or older | 120 living patients under 18 (74 under 10, 46 aged 10 to 17) | Adult profiles only |
+| No death date | 99 who died in the simulation | The experiment treats everyone as alive. Their records can contain end-of-life care (hospice, dialysis) that would be inconsistent. |
+| Marital status present, or age under 28 | none | See below |
 
-Starting from 574 patients, **308 remain** (160 F, 148 M). The rules overlap, so the
-removed counts above do not add up to 266. 52 living adults were dropped only because of a
-blank marital status. To keep them, remove `or not r["MARITAL"]` in `build_final.py`.
+Starting from 735 patients, **516 remain** (280 F, 236 M). The removed counts add up to
+219 = 99 + 120, and none of the removed patients falls in both groups.
+
+**Marital status.** Synthea assigns it only at age 28 (`LifecycleModule.java`, `case 28`: 80%
+married, 20% single). Everyone younger has a blank value. An earlier version of the script
+dropped blank-marital patients, which removed all adults aged 18 to 27. The script now keeps
+them and sets `marital` to `S` (single), which is an **assumption**, not data. An adult aged 28
+or older with a blank value would still be dropped (none exist). To leave the value blank
+instead, change the `marital = ...` line in `build_final.py`.
 
 Age is computed from `BIRTHDATE` to 2026-11-15, treating the patient as alive.
 
@@ -177,7 +209,7 @@ the original encounter dates, and all 2,350 procedure years agree with the origi
 
 ## Output
 
-Four files in `artifacts/mock_patient_profiles/`, two versions of the same 308 patients.
+Four files in `artifacts/mock_patient_profiles/`, two versions of the same 516 patients.
 First, the profiles with absolute dates (16 columns):
 
 - `artifacts/mock_patient_profiles/patients_final.jsonl`: one JSON object per line, lists kept as lists
@@ -190,7 +222,7 @@ used months after 2026-11-15 (19 columns: the same 16 with dates replaced, plus
 - `artifacts/mock_patient_profiles/patients_final_relative.jsonl`
 - `artifacts/mock_patient_profiles/patients_final_relative.csv`
 
-Average record size is about 2,800 characters (about 800 tokens), down from about 17,800
+Average record size is about 2,500 characters (about 700 tokens), down from about 17,800
 characters for the earlier full version.
 
 ## Earlier versions (local only, not committed)
@@ -208,6 +240,7 @@ characters for the earlier full version.
   draw clinical conclusions.
 - **Only the last 10 years are exported.** Synthea's `exporter.years_of_history` default is
   10, so older history is missing.
+- **Young adults and pregnant women are oversampled.** The extra batch deliberately adds them, so the age and pregnancy mix is not a natural one.
 - **Patients are treated as alive.** Ages were computed from birth dates without regard to
   the simulated death.
 - **Selections drop detail.** Only the 5 most recent encounter types, 8 procedures, and the
@@ -221,6 +254,7 @@ characters for the earlier full version.
 ```bash
 export JAVA_HOME=/opt/homebrew/opt/openjdk@17 PATH=/opt/homebrew/opt/openjdk@17/bin:$PATH
 ./generate_diverse.sh 10 ./output_diverse
+./generate_extra.sh ./output_diverse
 python3 -I add_csv_headers.py output_diverse/csv
 python3 -I build_final.py output_diverse/csv output_diverse/final 2026-11-15
 

@@ -3,8 +3,10 @@
 
 Usage: build_final.py <csv_dir> <out_dir> [reference_date=YYYY-MM-DD]
 
-Profiles kept: alive-in-simulation adults (18+) with a marital status.
-Dropped as "odd": under 18, died during the simulation, blank marital status.
+Profiles kept: alive-in-simulation adults (18+).
+Dropped as "odd": under 18, died during the simulation, blank marital status at age 28+.
+Adults aged 18-27 have no marital status in Synthea (it is assigned at age 28); they are
+kept with marital = "S" (single), which is an assumption.
 
 Shortening rules:
 - SNOMED type tags like "(disorder)" are stripped from descriptions.
@@ -56,9 +58,12 @@ def rows(name):
 P = {}
 for r in rows("patients"):
     age = age_on(to_date(r["BIRTHDATE"]))
-    if age < 18 or r["DEATHDATE"] or not r["MARITAL"]:
+    # Synthea assigns marital status only at age 28, so younger adults have none.
+    # Treat them as single ("S"); any adult 28+ with a blank value is dropped.
+    marital = r["MARITAL"] or ("S" if age < 28 else "")
+    if age < 18 or r["DEATHDATE"] or not marital:
         continue
-    P[r["Id"]] = {"patient_id": r["Id"], "age": age, "marital": r["MARITAL"],
+    P[r["Id"]] = {"patient_id": r["Id"], "age": age, "marital": marital,
                   "race": r["RACE"], "ethnicity": r["ETHNICITY"], "gender": r["GENDER"],
                   "city": r["CITY"], "state": r["STATE"],
                   "pregnancy_status": "not pregnant" if r["GENDER"] == "F" else "not applicable"}
