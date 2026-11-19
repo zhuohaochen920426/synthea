@@ -136,6 +136,22 @@ Not changed: **`age` is still the age on 2026-11-15.** It does not move with rea
 treat it as the patient's age when you use the profile. `ongoing` and `resolved` statuses
 were also decided on 2026-11-15 and are not re-evaluated.
 
+## Train / eval split (`splits/`)
+
+`artifacts/mock_patient_profiles/splits/` holds a **50/50 split: 258 train and 258 eval
+patients**, made by `split_train_eval.py` (seed 42). Each patient is in exactly one split.
+
+- Stratified on pregnancy status, gender and age band (18-29, 30-39, ..., 80-89), so both halves
+  have the same gender mix (140 F / 118 M each), 25 pregnant patients each, and almost the same
+  age distribution (mean 43.8 vs 43.9). The strata are not balanced on state, race or marital
+  status, so those can differ somewhat between the halves (for example Mississippi has 30 train
+  and 13 eval patients).
+- Files: `patients_final_{train,eval}.{csv,jsonl}` (absolute dates) and
+  `patients_final_relative_{train,eval}.{csv,jsonl}` (relative dates). The same patients are in
+  the same split in both versions.
+- `split_assignment.csv` lists `patient_id,split` for all 516 patients.
+- Rerun with another seed: `python3 -I split_train_eval.py artifacts/mock_patient_profiles artifacts/mock_patient_profiles/splits 7`.
+
 ## How it was made
 
 See [`MOCK_PATIENT_PROFILES_PIPELINE.md`](MOCK_PATIENT_PROFILES_PIPELINE.md) for the full process:
